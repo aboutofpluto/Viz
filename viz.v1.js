@@ -981,7 +981,7 @@
 		.transition()
 		.duration(duration)
 		.attrTween("d", chordTween)
-		.style("opacity",function(d){ return d.display ? chordOpacity : 0;});
+		.style("opacity",function(d){ return d.display ? chordOpacity(d) : 0;});
 	
 	
 	gchord.select(".viz-chord-labels")
