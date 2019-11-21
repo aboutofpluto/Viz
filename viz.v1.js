@@ -610,6 +610,7 @@
 		, source, target, value, padAngle, labelPadding, sort
 		, startAngle, chords, groups, label, min=0
 		, sel, chords, newchords, groups, newgroups
+	    , rotateLabel=false 
     	
   function chord(_){  
     sel=_;
@@ -656,15 +657,24 @@
 		.selectAll(".label")
 		.data(groups.filter(function(d){ return d.type=="g"}))
 		.enter()
-		.append("text")
-		.attr("class","label")	
+		.append("g")
+		.attr("class", "label")	
 		.on("mouseover",chord.mouseover)
-		.on("mouseout",chord.mouseout)			 
-		.attr("x",function(d){ return d.labelx})
-		.attr("y",function(d){ return d.labely})
+		.on("mouseout",chord.mouseout)
+		.attr("transform",function(d){ return "translate("+d.labelx+","+d.labely+")" })
+		.each(function(d) { this._current = d; })
+		.append("text")
+	    .attr("class", "text")
 		.text(label)
-		.style("text-anchor",function(d){var a =angle(d); return a < pi2 || a>tau-pi2 ? "start" : "end";})
-		.each(function(d) { this._current = d; })		
+		.style("text-anchor", function(d){var a = angle(d); return a < pi2 || a % (2 * pi) > tau-pi2 ? "start" : "end";})
+		.attr("transform",function(d){
+ 			if (rotateLabel == true) {
+				var a = d.labelangle * 180 / pi;
+				return "rotate("+a+")" 
+			}
+			return ""
+		})
+		.each(function(d) { this._current = d; })
 	
 	function arc(d){
 	  return viz_arc([innerRadius, outerRadius, d.startAngle, d.endAngle]);
@@ -712,6 +722,10 @@
   chord.labelPadding = function(_){ 
 	return arguments.length ? (labelPadding = _, chord) 
 		:  typeof labelPadding !== "undefined" ? labelPadding : (labelPadding=1.02); 
+  }
+  chord.rotateLabel = function(_) {
+	  return arguments.length ? (rotateLabel = _, chord) 
+		  : typeof rotateLabel !== "undefined" ? rotateLabel : (rotateLabel=false);
   }
   chord.sort = function(_){ 
 	return arguments.length ? (sort = _, reComputeLayout=true, chord) 
@@ -803,10 +817,13 @@
 	chords=[];
 	groups.filter(function(g){ return g.type=="g"})
 	  .forEach(function(g, gi){
-		var _labelangle = angle(g)		
-		g.labelx = labelPadding*outerRadius*Math.cos(_labelangle)
-		g.labely = labelPadding*outerRadius*Math.sin(_labelangle)
-		
+		  g.labelangle = angle(g)		
+		  g.labelx = labelPadding*outerRadius*Math.cos((g.labelangle))
+		  g.labely = labelPadding*outerRadius*Math.sin((g.labelangle))
+		  if (g.labelangle > pi2 && g.labelangle < tau - pi2) {
+			  g.labelangle += pi
+		  }
+
         var gia = viz_shiftarray(keys.length,gi);
 	    
 	    var grpbarsgia = viz_getbars(gia.map(function(d){return subgrp[g.source][keys[d]];}), 0, 0, g.startAngle, g.endAngle);
@@ -890,10 +907,13 @@
 	
 	newchords=[];
 	newgroups.filter(function(g){ return g.type=="g"}).forEach(function(g, gi){
-	  var _labelangle = angle(g)		
-	  g.labelx = labelPadding*outerRadius*Math.cos(_labelangle)
-	  g.labely = labelPadding*outerRadius*Math.sin(_labelangle)
-	  
+		g.labelangle = angle(g)
+		g.labelx = labelPadding*outerRadius*Math.cos(g.labelangle)
+		g.labely = labelPadding*outerRadius*Math.sin(g.labelangle)
+		if (g.labelangle > pi2 && g.labelangle < tau - pi2) {
+			g.labelangle += pi
+		}
+
       var gia = viz_shiftarray(keys.length,gi);
 	  
 	  var a0 = gia.map(function(d){ var k = keys[d]; 
@@ -954,17 +974,16 @@
       this._current = i(0);
       return function(t) { return arc(i(t),t); };
     }  
-    function labelTweenx(a) {
+	function labelTweenPosition(a) {
       var i = d3.interpolate(this._current, a);
       this._current = i(0);
-      return function(t) { return labelPadding*outerRadius*Math.cos(angle(i(t))); };
-    }  
-    function labelTweeny(a) {
+      return function(t) { var langle = angle(i(t)); return "translate("+labelPadding*outerRadius*Math.cos(langle)+","+labelPadding*outerRadius*Math.sin(langle)+")"; };
+	}
+	function labelTweenRotate(a) {
       var i = d3.interpolate(this._current, a);
       this._current = i(0);
-      return function(t) { return labelPadding*outerRadius*Math.sin(angle(i(t))); };
-    }  
-	
+	  return function(t) { var langle = i(t).labelangle * 180 / pi; return "rotate("+langle+")" };
+	}
     var gchord = sel.select(".viz-chord")
 	var tempgroups = f? newgroups : chord.groups()
 	
@@ -983,16 +1002,24 @@
 		.attrTween("d", chordTween)
 		.style("opacity",function(d){ return d.display ? chordOpacity(d) : 0;});
 	
-	
 	gchord.select(".viz-chord-labels")
 		.selectAll(".label")
 		.data(tempgroups.filter(function(d){ return d.type=="g"}))
 	    .transition()
 		.duration(duration)
-	    .attrTween("x",labelTweenx)
-	    .attrTween("y",labelTweeny)
-		.text(label)
-		.style("text-anchor",function(d){var a =angle(d); return a < pi2 || a>tau-pi2 ? "start" : "end";});	
+	    .attrTween("transform",labelTweenPosition)
+
+    gchord.select(".viz-chord-labels")
+	    .selectAll('.text')
+		.data(tempgroups.filter(function(d){ return d.type=="g"}))
+	    .transition()
+		.duration(duration)
+	    .attrTween("transform", labelTweenRotate)
+	    // .on("end", function() {     
+		// 	gchord.select(".viz-chord-labels")
+		// 		.selectAll('.text')
+				.style("text-anchor", function(d){var a = angle(d); return a < pi2 || a % (2 * pi) > tau-pi2 ? "start" : "end";})
+		// })
   }
   function angle(d){
     return viz_reduceAngle((d.startAngle+d.endAngle)/2);
